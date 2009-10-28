@@ -1,5 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
+#include <sys/select.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/shape.h>
 #include <X11/extensions/XTest.h>
@@ -13,10 +15,15 @@ static XGCValues xgcv;
 static unsigned win_width = 480, win_height = 600;
 static XFontStruct *font;
 static int font_width, font_height, font_offset_x, font_offset_y;
+static unsigned long kb_color;
+static unsigned timeout;	// delay of inactivity before hiding the KB
+static time_t hide_time;	// after this timestamp, we will hide the KB
+static int visible;	// weither the KB is currently visible
 
+#define SHIFT_KEYCODE 62
 #define nb_cols 6
 #define nb_rows 9
-#define border 10
+static int border_left, border_right, border_top, border_bottom;
 
 static struct key {
 	char const *name;	// takes precedence over (un)shifter char
@@ -33,7 +40,7 @@ static struct key {
 	{ {0,'z','Z',52,0,0}, {0,'x','X',53,0,0}, {0,'c','C',54,0,0}, {0,'v','V',55,0,0}, {0,'b','B',56,0,0}, {0,'n','N',57,0,0} },
 	{ {0,'u','U',30,0,0}, {0,'i','I',31,0,0}, {0,'o','O',32,0,0}, {0,'p','P',33,0,0}, {0,'[','{',34,0,0}, {0,']','}',35,0,0} },
 	{ {0,'j','J',44,0,0}, {0,'k','K',45,0,0}, {0,'l','L',46,0,0}, {0,';',':',47,0,0},{0,'\'','"',48,0,0}, {"Ctl",'C','C',37,1,0} },
-	{ {0,'m','M',58,0,0}, {0,',','<',59,0,0}, {0,'.','>',60,0,0}, {0,' ',' ',61,0,0}, {0,'S','S',62,1,0}, {"Ret",'R','R',36,0,0} },
+	{ {0,'m','M',58,0,0}, {0,',','<',59,0,0}, {0,'.','>',60,0,0}, {0,' ',' ',65,0,0}, {"Shf",'S','S',62,1,0}, {"Ret",'R','R',36,0,0} },
 };
 
 static struct key *key_at(unsigned col, unsigned row)
@@ -41,17 +48,38 @@ static struct key *key_at(unsigned col, unsigned row)
 	return &kbmap[row][col];
 }
 
-static void update_mask(int shifted)
+static char const *get_config_str(char const *varname, char const *defaultval)
 {
+	char const *val = getenv(varname);
+	return val ? val : defaultval;
+}
+
+static unsigned long get_config_int(char const *varname, unsigned long defaultval)
+{
+	char const *val = getenv(varname);
+	if (! val) return defaultval;
+	char *end;
+	unsigned long i = strtoul(val, &end, 0);
+	if (*end) {
+		fprintf(stderr, "Garbage at the end of '%s', using default instead (%lu)\n",
+			val, defaultval);
+		return defaultval;
+	}
+	return i;
+}
+
+static void show_mask(int shifted)
+{
+	// Update mask
 	XSetForeground(dis, mask_gc, BlackPixel(dis, screen));
 	XFillRectangle(dis, mask, mask_gc, 0, 0, win_width, win_height);
 	XSetForeground(dis, mask_gc, WhitePixel(dis, screen));
 	for (unsigned col = 0; col < nb_cols; col++) {
 		for (unsigned row = 0; row < nb_rows; row++) {
-			int const W = (win_width  - 2*border) / nb_cols;
-			int const x = border + col * W + (W - font_width)/2 - font_offset_x;
-			int const H = (win_height - 2*border) / nb_rows;
-			int const y = border + row * H + (H - font_height)/2 - font_offset_y;
+			int const W = (win_width  - (border_left+border_right)) / nb_cols;
+			int const x = border_left + col * W + (W - font_width)/2 - font_offset_x;
+			int const H = (win_height - (border_top+border_bottom)) / nb_rows;
+			int const y = border_top + row * H + (H - font_height)/2 - font_offset_y;
 			struct key const *key = key_at(col, row);
 			if (key->name) {
 				// FIXME: compute the actual width of the string
@@ -63,8 +91,22 @@ static void update_mask(int shifted)
 	}
 	
 	XShapeCombineMask(dis, win, ShapeBounding, 0, 0, mask, ShapeSet);
-	XSetForeground(dis, gc, WhitePixel(dis, screen));
+
+	// Update window
+	XSetForeground(dis, gc, kb_color);
 	XFillRectangle(dis, win, gc, 0, 0, win_width, win_height);
+
+	visible = 1;
+}
+
+static void hide_mask(void)
+{
+	// Update mask
+	XSetForeground(dis, mask_gc, BlackPixel(dis, screen));
+	XFillRectangle(dis, mask, mask_gc, 0, 0, win_width, win_height);
+	XShapeCombineMask(dis, win, ShapeBounding, 0, 0, mask, ShapeSet);
+	
+	visible = 0;
 }
 
 static void redraw(void)
@@ -75,7 +117,7 @@ static void redraw(void)
 		if (GrabSuccess != XGrabPointer(dis, win, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None, CurrentTime)) {
 			fprintf(stderr, "Cannot grab pointer !\n");
 		}
-		update_mask(0);
+		show_mask(0);
 	}
 }
 
@@ -102,7 +144,7 @@ static void open_X(void)
 	mask = XCreatePixmap(dis, win, win_width, win_height, 1);
 	mask_gc = XCreateGC(dis, mask, 0, &xgcv);
 
-	char const *fontname = "-sony-*-*-*-*-*-24-*-*-*-*-*-*-*";
+	char const *fontname = get_config_str("KBOSD_FONT", "-sony-*-*-*-*-*-24-*-*-*-*-*-*-*");
 	font = XLoadQueryFont(dis, fontname);
 	if (font) {
 		XSetFont(dis, mask_gc, font->fid);
@@ -130,25 +172,28 @@ static void close_X(void)
 
 static void hit(int x, int y, int press)
 {
-	unsigned const col = ((x-border) * nb_cols) / (win_width  - 2*border);
-	unsigned const row = ((y-border) * nb_rows) / (win_height - 2*border);
+	unsigned const col = ((x-border_left) * nb_cols) / (win_width  - (border_left+border_right));
+	unsigned const row = ((y-border_top) * nb_rows) / (win_height - (border_top+border_bottom));
 	if (row >= nb_rows || col >= nb_cols) return;
+
 	struct key *key = key_at(col, row);
 
-	//printf("%s @ (%i,%i) => (%u,%u) => '%c'\n", press ? "Press":"Release", x, y, col, row, key->unshifted);
-
-#	define SHIFT_KEYCODE 62
-	if (press) {
+	int need_show = -1;	// -1 -> none, 0 -> unshifted, 1 -> shifted.
+	hide_time = time(NULL) + timeout;
+	
+	if (! visible) {
+		need_show = 0;
+	} else if (press) {
 		XTestFakeKeyEvent(dis, key->code, True, CurrentTime);
 	} else {
 		if (key->hold) {	// Must not release at once
 			if (! key->held) {
 				key->held = 1;
-				if (key->code == SHIFT_KEYCODE) update_mask(1);
+				if (key->code == SHIFT_KEYCODE) need_show = 1;
 			} else {	// The key was already hold : release it
 				key->held = 0;
 				XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
-				if (key->code == SHIFT_KEYCODE) update_mask(0);
+				if (key->code == SHIFT_KEYCODE) need_show = 0;
 			}
 		} else {
 			XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
@@ -159,33 +204,61 @@ static void hit(int x, int y, int press)
 					if (k->held) {
 						k->held = 0;
 						XTestFakeKeyEvent(dis, k->code, False, CurrentTime);
-						if (k->code == SHIFT_KEYCODE) update_mask(0);
+						if (k->code == SHIFT_KEYCODE) need_show = 0;
 					}
 				}
 			}
 		}
 	}
+
+	if (need_show != -1) show_mask(need_show);
 }
 
 static void event_loop(void)
 {
-	XEvent event;
-	
-	while (1) {		
-		XNextEvent(dis, &event);
+	int fd = ConnectionNumber(dis);
+	fd_set fds;
 
-		if (event.type == Expose && event.xexpose.count == 0) {
-			redraw();
-		} else if (event.type == ButtonPress) {
-			hit(event.xbutton.x, event.xbutton.y, 1);
-		} else if (event.type == ButtonRelease) {
-			hit(event.xbutton.x, event.xbutton.y, 0);
+	while (1) {
+		// Handle all available events
+		while (XPending(dis)) {
+			XEvent event;
+			XNextEvent(dis, &event);
+
+			if (event.type == Expose && event.xexpose.count == 0) {
+				redraw();
+			} else if (event.type == ButtonPress) {
+				hit(event.xbutton.x, event.xbutton.y, 1);
+			} else if (event.type == ButtonRelease) {
+				hit(event.xbutton.x, event.xbutton.y, 0);
+			}
+		}
+		// Wait for X11 to move or 1s max.
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+		select(fd+1, &fds, NULL, NULL, &(struct timeval){ .tv_usec=0, .tv_sec=1 });
+		if (time(NULL) > hide_time && visible) {
+			hide_mask();
 		}
 	}
 }
 
 int main(void)
 {
+	/* These defaults are OK for Hackable:1 */
+	border_left   = get_config_int("KBOSD_BORDER_LEFT", 0);
+	border_right  = get_config_int("KBOSD_BORDER_RIGHT", 0);
+	border_top    = get_config_int("KBOSD_BORDER_TOP", 20);
+	border_bottom = get_config_int("KBOSD_BORDER_BOTTOM", 0);
+	kb_color      = get_config_int("KBOSD_COLOR", 0xFFFFFF);
+
+	/* Start timeout
+	 * If you look for you keys longer than 4s, then you need practice !
+	 */
+	timeout   = get_config_int("KBOSD_TIMEOUT", 4);
+	hide_time = time(NULL) + timeout;
+	visible = 1;
+
 	open_X();
 	event_loop();
 	close_X();
