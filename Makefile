@@ -9,3 +9,10 @@ kbosd: kbosd.o topmost.o
 
 clean:
 	rm -f *.o
+
+PREFIX := /usr/local/
+
+install: kbosd kbosd.1
+	install -d $(DESTDIR)$(PREFIX)bin/ $(DESTDIR)$(PREFIX)share/man/man1/
+	install ./kbosd $(DESTDIR)$(PREFIX)bin/
+	install -m644 ./kbosd.1 $(DESTDIR)$(PREFIX)share/man/man1/
