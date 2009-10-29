@@ -10,6 +10,8 @@
 #include <X11/extensions/shape.h>
 #include <X11/extensions/XTest.h>
 
+extern void stay_on_top(Display *, Window);
+
 static Display *dis;
 static int screen;
 static Window win;
@@ -77,7 +79,7 @@ static unsigned long get_config_int(char const *varname, unsigned long defaultva
 static void show_mask(void)
 {
 	bool const shifted = key_at(SHIFT_COL, SHIFT_ROW)->held;
-	printf("Show mask %s\n", shifted ? "Shifted":"Unshifted");
+	//printf("Show mask %s\n", shifted ? "Shifted":"Unshifted");
 
 	// Update mask
 	XSetForeground(dis, mask_gc, BlackPixel(dis, screen));
@@ -172,8 +174,8 @@ static void open_X(void)
 		&setwinattr);
 	XSelectInput(dis, win, ExposureMask|ButtonPressMask|ButtonReleaseMask);
 	XStoreName(dis, win, "KOSD");
-
 	gc = XCreateGC(dis, win, 0,0);
+	stay_on_top(dis, win);
 
 	mask = XCreatePixmap(dis, win, win_width, win_height, 1);
 	mask_gc = XCreateGC(dis, mask, 0, &xgcv);
@@ -212,7 +214,7 @@ static void hit(int x, int y, int press)
 	if (row >= nb_rows || col >= nb_cols) return;
 
 	struct key *key = key_at(col, row);
-	printf("%s key %c\n", press ? "Press":"Release", key->unshifted);
+	//printf("%s key %c\n", press ? "Press":"Release", key->unshifted);
 
 	bool need_show = false;
 	hide_time = time(NULL) + timeout;
