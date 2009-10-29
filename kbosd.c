@@ -32,6 +32,7 @@ static int visible;	// weither the KB is currently visible
 #define nb_rows 9
 static int col_width, row_height;
 static int border_left, border_right, border_top, border_bottom;
+static unsigned osd_width, osd_height;
 
 static struct key {
 	char const *name;	// takes precedence over (un)shifter char
@@ -83,13 +84,13 @@ static void show_mask(void)
 
 	// Update mask
 	XSetForeground(dis, mask_gc, BlackPixel(dis, screen));
-	XFillRectangle(dis, mask, mask_gc, 0, 0, win_width, win_height);
+	XFillRectangle(dis, mask, mask_gc, 0, 0, osd_width, osd_height);
 	XSetForeground(dis, mask_gc, WhitePixel(dis, screen));
 	for (unsigned col = 0; col < nb_cols; col++) {
 		for (unsigned row = 0; row < nb_rows; row++) {
-			int const x_col = border_left + col * col_width;
+			int const x_col = col * col_width;
 			int const x = x_col + (col_width - font_width)/2 - font_offset_x;
-			int const y_row = border_top + row * row_height;
+			int const y_row = row * row_height;
 			int const y = y_row + (row_height - font_height)/2 - font_offset_y;
 			struct key const *key = key_at(col, row);
 			if (key->held) {
@@ -108,7 +109,7 @@ static void show_mask(void)
 
 	// Update window
 	XSetForeground(dis, gc, kb_color);
-	XFillRectangle(dis, win, gc, 0, 0, win_width, win_height);
+	XFillRectangle(dis, win, gc, 0, 0, osd_width, osd_height);
 
 	visible = 1;
 }
@@ -117,7 +118,7 @@ static void hide_mask(void)
 {
 	// Update mask
 	XSetForeground(dis, mask_gc, BlackPixel(dis, screen));
-	XFillRectangle(dis, mask, mask_gc, 0, 0, win_width, win_height);
+	XFillRectangle(dis, mask, mask_gc, 0, 0, osd_width, osd_height);
 	XShapeCombineMask(dis, win, ShapeBounding, 0, 0, mask, ShapeSet);
 	
 	visible = 0;
@@ -148,7 +149,7 @@ static void redraw(void)
 	static int inited = 0;
 	if (! inited) {
 		inited = 1;
-		if (GrabSuccess != XGrabPointer(dis, win, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None, CurrentTime)) {
+		if (GrabSuccess != XGrabPointer(dis, win, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, win, None, CurrentTime)) {
 			fprintf(stderr, "Cannot grab pointer !\n");
 		}
 		// Just in case the previous invocation quit with some left pending Press events.
@@ -165,7 +166,7 @@ static void open_X(void)
 	XSetWindowAttributes setwinattr = { .override_redirect = 1 };
 	win = XCreateWindow(
 		dis, XRootWindow(dis, screen),
-		0, 0, win_width, win_height,
+		border_left, border_top, osd_width, osd_height,
 		0,
 		DefaultDepth(dis, screen),
 		CopyFromParent,
@@ -177,7 +178,7 @@ static void open_X(void)
 	gc = XCreateGC(dis, win, 0,0);
 	stay_on_top(dis, win);
 
-	mask = XCreatePixmap(dis, win, win_width, win_height, 1);
+	mask = XCreatePixmap(dis, win, osd_width, osd_height, 1);
 	mask_gc = XCreateGC(dis, mask, 0, &xgcv);
 
 	char const *fontname = get_config_str("KBOSD_FONT", "-sony-*-*-*-*-*-24-*-*-*-*-*-*-*");
@@ -209,8 +210,8 @@ static void close_X(void)
 
 static void hit(int x, int y, int press)
 {
-	unsigned const col = ((x-border_left) * nb_cols) / (win_width  - (border_left+border_right));
-	unsigned const row = ((y-border_top) * nb_rows) / (win_height - (border_top+border_bottom));
+	unsigned const col = (x * nb_cols) / osd_width;
+	unsigned const row = (y * nb_rows) / osd_height;
 	if (row >= nb_rows || col >= nb_cols) return;
 
 	struct key *key = key_at(col, row);
@@ -279,9 +280,11 @@ int main(void)
 	border_top    = get_config_int("KBOSD_BORDER_TOP", 20);
 	border_bottom = get_config_int("KBOSD_BORDER_BOTTOM", 0);
 	kb_color      = get_config_int("KBOSD_COLOR", 0xFFFFFF);
+	osd_width     = win_width - (border_left+border_right);
+	osd_height    = win_height - (border_top+border_bottom);
 
-	col_width  = (win_width  - (border_left+border_right)) / nb_cols;
-	row_height = (win_height - (border_top+border_bottom)) / nb_rows;
+	col_width  = osd_width / nb_cols;
+	row_height = osd_height / nb_rows;
 
 	/* Start timeout
 	 * If you look for you keys longer than 4s, then you need practice !
