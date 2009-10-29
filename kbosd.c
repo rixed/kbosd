@@ -3,6 +3,7 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <time.h>
 #include <sys/select.h>
 #include <X11/Xlib.h>
@@ -23,9 +24,11 @@ static unsigned timeout;	// delay of inactivity before hiding the KB
 static time_t hide_time;	// after this timestamp, we will hide the KB
 static int visible;	// weither the KB is currently visible
 
-#define SHIFT_KEYCODE 62
+#define SHIFT_COL 4
+#define SHIFT_ROW 8
 #define nb_cols 6
 #define nb_rows 9
+static int col_width, row_height;
 static int border_left, border_right, border_top, border_bottom;
 
 static struct key {
@@ -71,19 +74,25 @@ static unsigned long get_config_int(char const *varname, unsigned long defaultva
 	return i;
 }
 
-static void show_mask(int shifted)
+static void show_mask(void)
 {
+	bool const shifted = key_at(SHIFT_COL, SHIFT_ROW)->held;
+	printf("Show mask %s\n", shifted ? "Shifted":"Unshifted");
+
 	// Update mask
 	XSetForeground(dis, mask_gc, BlackPixel(dis, screen));
 	XFillRectangle(dis, mask, mask_gc, 0, 0, win_width, win_height);
 	XSetForeground(dis, mask_gc, WhitePixel(dis, screen));
 	for (unsigned col = 0; col < nb_cols; col++) {
 		for (unsigned row = 0; row < nb_rows; row++) {
-			int const W = (win_width  - (border_left+border_right)) / nb_cols;
-			int const x = border_left + col * W + (W - font_width)/2 - font_offset_x;
-			int const H = (win_height - (border_top+border_bottom)) / nb_rows;
-			int const y = border_top + row * H + (H - font_height)/2 - font_offset_y;
+			int const x_col = border_left + col * col_width;
+			int const x = x_col + (col_width - font_width)/2 - font_offset_x;
+			int const y_row = border_top + row * row_height;
+			int const y = y_row + (row_height - font_height)/2 - font_offset_y;
 			struct key const *key = key_at(col, row);
+			if (key->held) {
+				XDrawRectangle(dis, mask, mask_gc, x_col+1, y_row+1, col_width-2, row_height-2);
+			}
 			if (key->name) {
 				// FIXME: compute the actual width of the string
 				XDrawString(dis, mask, mask_gc, x-font_width, y, key->name, 3);
@@ -112,6 +121,26 @@ static void hide_mask(void)
 	visible = 0;
 }
 
+// Release all previously held keys, sending fake release event.
+// Return true if some keys were actually held.
+static bool release_all_held(void)
+{
+	bool ret = false;
+
+	for (unsigned col = 0; col < nb_cols; col++) {
+		for (unsigned row = 0; row < nb_rows; row++) {
+			struct key *key = key_at(col, row);
+			if (key->held) {
+				key->held = 0;
+				XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
+				ret = true;
+			}
+		}
+	}
+
+	return ret;
+}
+
 static void redraw(void)
 {
 	static int inited = 0;
@@ -120,7 +149,9 @@ static void redraw(void)
 		if (GrabSuccess != XGrabPointer(dis, win, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None, CurrentTime)) {
 			fprintf(stderr, "Cannot grab pointer !\n");
 		}
-		show_mask(0);
+		// Just in case the previous invocation quit with some left pending Press events.
+		(void)release_all_held();
+		show_mask();
 	}
 }
 
@@ -166,6 +197,7 @@ static void open_X(void)
 
 static void close_X(void)
 {
+	(void)release_all_held();
 	if (font) XFreeFont(dis, font);
 	XUngrabPointer(dis, CurrentTime);
 	XFreeGC(dis, gc);
@@ -180,41 +212,32 @@ static void hit(int x, int y, int press)
 	if (row >= nb_rows || col >= nb_cols) return;
 
 	struct key *key = key_at(col, row);
+	printf("%s key %c\n", press ? "Press":"Release", key->unshifted);
 
-	int need_show = -1;	// -1 -> none, 0 -> unshifted, 1 -> shifted.
+	bool need_show = false;
 	hide_time = time(NULL) + timeout;
 	
 	if (! visible) {
-		need_show = 0;
+		need_show = true;
 	} else if (press) {
 		XTestFakeKeyEvent(dis, key->code, True, CurrentTime);
-	} else {
+	} else {	// release
 		if (key->hold) {	// Must not release at once
 			if (! key->held) {
 				key->held = 1;
-				if (key->code == SHIFT_KEYCODE) need_show = 1;
 			} else {	// The key was already hold : release it
 				key->held = 0;
 				XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
-				if (key->code == SHIFT_KEYCODE) need_show = 0;
 			}
-		} else {
+			need_show = true;
+		} else {	// normal key
 			XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
 			// Release all previously hold keys
-			for (unsigned col = 0; col < nb_cols; col++) {
-				for (unsigned row = 0; row < nb_rows; row++) {
-					struct key *k = key_at(col, row);
-					if (k->held) {
-						k->held = 0;
-						XTestFakeKeyEvent(dis, k->code, False, CurrentTime);
-						if (k->code == SHIFT_KEYCODE) need_show = 0;
-					}
-				}
-			}
+			need_show = release_all_held();
 		}
 	}
 
-	if (need_show != -1) show_mask(need_show);
+	if (need_show) show_mask();
 }
 
 static void event_loop(void)
@@ -254,6 +277,9 @@ int main(void)
 	border_top    = get_config_int("KBOSD_BORDER_TOP", 20);
 	border_bottom = get_config_int("KBOSD_BORDER_BOTTOM", 0);
 	kb_color      = get_config_int("KBOSD_COLOR", 0xFFFFFF);
+
+	col_width  = (win_width  - (border_left+border_right)) / nb_cols;
+	row_height = (win_height - (border_top+border_bottom)) / nb_rows;
 
 	/* Start timeout
 	 * If you look for you keys longer than 4s, then you need practice !
