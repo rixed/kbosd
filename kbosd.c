@@ -149,7 +149,7 @@ static void redraw(void)
 	static int inited = 0;
 	if (! inited) {
 		inited = 1;
-		if (GrabSuccess != XGrabPointer(dis, win, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, win, None, CurrentTime)) {
+		if (GrabSuccess != XGrabPointer(dis, win, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None, CurrentTime)) {
 			fprintf(stderr, "Cannot grab pointer !\n");
 		}
 		// Just in case the previous invocation quit with some left pending Press events.
