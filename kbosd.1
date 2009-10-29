@@ -1,0 +1,34 @@
+.TH KBOSD 1 "October 29, 2009" "FreeRunner Extra" "KbOSD - Virtual OSD Keyboard"
+.SH NAME
+kbosd \- Keyboard in OSD
+.SH DESCRIPTION
+First display an OSD keyboard above the root window, then grab the mouse, then
+fake keycode events.
+.PP
+It will disapear after a short period of inactivity so that you can better see
+what you are typing.
+.SH ENVIRONMENT
+It takes all configuration parameters via environment variables.
+The first one are usefull to resize the OSD window so that it does not cover
+(and grabs pointer events) some margnis of the screen. The defaults values are
+OK for Hackable:1 Freerunner distribution.
+.IP \fBKBOSD_BORDER_LEFT\fP 2
+Left margin, in pixels, before the OSD window begins (default: 0).
+.IP \fBKBOSD_BORDER_RIGHT\fP 2
+Right margin, in pixels, after the OSD window (default: 0).
+.IP KBOSD_BORDER_TOP 2
+Top margin, in pixels, on top of the OSD window (default: 20).
+.IP KBOSD_BORDER_BOTTOM 2
+Bottom margin, etc (default: 0).
+.PP
+You can also control the appearance (and disappearance) of the OSD :
+.IP KBOSD_COLOR 2
+Color as an unsigned integer (for instance, 0xFF0000 on a 32 bits display
+would probably be red)
+.IP KBOSD_TIMEOUT 2
+Number of seconds of inactivity before the OSD is hiden (default: 4).
+.IP KBOSD_FONT 2
+Font to use (default: "-sony-*-*-*-*-*-24-*-*-*-*-*-*-*" which is the
+biggest I've found available on H:1).
+.SH AUTHOR
+rixed@happyleptic.org
