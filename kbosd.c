@@ -1,3 +1,6 @@
+/* KbOSD - Keyboard on OSD - GPLv3.
+ * Home: http://gitorious.org/kbosd
+ */
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
