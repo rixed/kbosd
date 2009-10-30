@@ -43,7 +43,6 @@ static unsigned osd_width, osd_height;
 #define KN(n,c) { { n, n }, false, (c), NOT_HELD }
 #define KS(n1,n2,c) { { n1, n2 }, false, (c), NOT_HELD }
 #define KH(n,c) { { n, n }, true, (c), NOT_HELD }
-#define KF(n,f) { { n, n }, false, f, NOT_HELD }
 static struct key {
 	char name[2][4];
 	bool hold;	// must keep pressed nutil next key that's not hold
@@ -67,8 +66,33 @@ static struct key {
 	}
 }, bot_kbmap[nb_bot_rows][nb_cols] = {
 	{KH("Shf",62),KN("",65),KN("",65),KN("Ins",106),KN("Del",107),KN("Bak",22)},
-	{KF("Col",0),KF("Tgl",1),KH("Alt",64),KH("AlG",113),KH("Ctl",37),KN("Ret",36)}
+	{KN("Col",0),KN("Tgl",1),KH("Alt",64),KH("AlG",113),KH("Ctl",37),KN("Ret",36)}
 };
+
+static void read_layout(char const *path)
+{
+	FILE *f = fopen(path, "r");
+	if (! f) {
+		perror(path);
+		return;
+	}
+
+	for (unsigned line=0; line < (nb_top_rows*2+nb_bot_rows); line++) {
+		for (unsigned col=0; col < nb_cols; col++) {
+			struct key *key = &(line < nb_top_rows*2 ? top_kbmap[line/nb_top_rows] : bot_kbmap)[line % nb_top_rows][col];
+			unsigned u2bool;
+			if (4 != fscanf(f, " %3s %3s %u %u",
+				key->name[0], key->name[1], &key->code, &u2bool)) {
+				fprintf(stderr, "Cannot parse file '%s' at line %u\n", path, line);
+				return;
+			}
+			key->hold = !!u2bool;
+			for (unsigned n=0; n<2; n++) {	// As we cannot scanf spaces
+				if (0 == strcmp(key->name[n], "___")) memset(key->name[n], ' ', 3);
+			}
+		}
+	}
+}
 
 static struct key *key_at(unsigned col, unsigned row)
 {
@@ -336,6 +360,9 @@ int main(void)
 
 	col_width  = osd_width / nb_cols;
 	row_height = osd_height / nb_rows;
+
+	char const *layout_path = get_config_str("KBOSD_LAYOUT", NULL);
+	if (layout_path) read_layout(layout_path);
 
 	/* Start timeout
 	 * If you look for you keys longer than 4s, then you need practice !
