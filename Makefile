@@ -1,4 +1,4 @@
-CFLAGS  =-W -Wall -std=c99
+CFLAGS  =-W -Wall -std=c99 -D_GNU_SOURCE
 LDFLAGS =-lX11 -lXext -lXtst
 
 all: kbosd

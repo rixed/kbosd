@@ -1,5 +1,6 @@
 /* KbOSD - Keyboard on OSD - GPLv3.
  * Home: http://gitorious.org/kbosd
+ * (c)2009 Cedric Cellier, Radics Áron
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -7,6 +8,7 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
+#include <unistd.h>
 #include <sys/select.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/shape.h>
@@ -31,6 +33,11 @@ static bool shifted;
 static int map;
 static int color;
 
+static unsigned short int vibrator_strength;
+static unsigned int vibrator_time;
+static bool with_vibrator;
+static FILE *vib_fd;
+
 #define nb_cols 6
 #define nb_top_rows 6
 #define nb_bot_rows 2
@@ -43,6 +50,7 @@ static unsigned osd_width, osd_height;
 #define KN(n,c) { { n, n }, false, (c), NOT_HELD }
 #define KS(n1,n2,c) { { n1, n2 }, false, (c), NOT_HELD }
 #define KH(n,c) { { n, n }, true, (c), NOT_HELD }
+
 static struct key {
 	char name[2][4];
 	bool hold;	// must keep pressed nutil next key that's not hold
@@ -102,6 +110,15 @@ static struct key *key_at(unsigned col, unsigned row)
 	}
 	return &bot_kbmap[row-nb_top_rows][col];
 }
+
+static void vibrate(void) 
+{
+	fprintf(vib_fd, "%d\n", vibrator_strength);
+	fflush(vib_fd);
+	usleep(vibrator_time);
+	fprintf(vib_fd, "0\n");
+	fflush(vib_fd);
+};
 
 static char const *get_config_str(char const *varname, char const *defaultval)
 {
@@ -285,6 +302,7 @@ static void hit(int x, int y, int press)
 			need_show = true;
 		} else {
 			XTestFakeKeyEvent(dis, key->code, True, CurrentTime);
+			if (with_vibrator) vibrate();
 			if (key->code == SHIFT_KEYCODE) {
 				shifted = true;
 				need_show = true;
@@ -357,9 +375,17 @@ int main(void)
 	kb_color[1]   = get_config_int("KBOSD_COLOR_ALT", 0xFFE0);
 	osd_width     = win_width - (border_left+border_right);
 	osd_height    = win_height - (border_top+border_bottom);
+	col_width     = osd_width / nb_cols;
+	row_height    = osd_height / nb_rows;
 
-	col_width  = osd_width / nb_cols;
-	row_height = osd_height / nb_rows;
+	char const *vibrator_file;
+	vibrator_strength = get_config_int("KBOSD_VIBRATOR_STRENGTH", 100); // 0 - 255
+	vibrator_time     = get_config_int("KBOSD_VIBRATOR_TIME", 50000);     // in micro-seconds
+	vibrator_file     = get_config_str("KBOSD_VIBRATOR_FILE", "/sys/class/leds/neo1973:vibrator/brightness");  // on openmoko
+	with_vibrator     = vibrator_strength && vibrator_time && vibrator_file;
+	if (with_vibrator && !(vib_fd = fopen(vibrator_file, "w"))) {
+		perror(vibrator_file);
+	}
 
 	char const *layout_path = get_config_str("KBOSD_LAYOUT", NULL);
 	if (layout_path) read_layout(layout_path);
@@ -374,5 +400,7 @@ int main(void)
 	open_X();
 	event_loop();
 	close_X();
+
+	if (vib_fd) fclose(vib_fd);
 	return 0;
 }
