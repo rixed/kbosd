@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
+#include <assert.h>
 #include <time.h>
 #include <sys/select.h>
 #include <X11/Xlib.h>
@@ -21,41 +23,60 @@ static XGCValues xgcv;
 static unsigned win_width = 480, win_height = 600;
 static XFontStruct *font;
 static int font_width, font_height, font_offset_x, font_offset_y;
-static unsigned long kb_color;
+static unsigned long kb_color[2];
 static unsigned timeout;	// delay of inactivity before hiding the KB
 static time_t hide_time;	// after this timestamp, we will hide the KB
 static bool visible;	// weither the KB is currently visible
 static bool shifted;
+static int map;
+static int color;
 
 #define nb_cols 6
-#define nb_rows 9
+#define nb_top_rows 6
+#define nb_bot_rows 2
+#define nb_rows (nb_top_rows+nb_bot_rows)
 static int col_width, row_height;
 static int border_left, border_right, border_top, border_bottom;
 static unsigned osd_width, osd_height;
 
 #define SHIFT_KEYCODE 62
-
+#define KN(n,c) { { n, n }, false, (c), NOT_HELD }
+#define KS(n1,n2,c) { { n1, n2 }, false, (c), NOT_HELD }
+#define KH(n,c) { { n, n }, true, (c), NOT_HELD }
+#define KF(n,f) { { n, n }, false, f, NOT_HELD }
 static struct key {
-	char const *name;	// takes precedence over (un)shifter char
-	char unshifted, shifted;
-	unsigned code;	// use xev to find keycodes !
-	int hold:1;	// must keep pressed nutil next key that's not hold
+	char name[2][4];
+	bool hold;	// must keep pressed nutil next key that's not hold
+	unsigned code;	// use xev to find keycodes ! Special value 0 and 1 for internal functions
 	enum held_state { NOT_HELD, HELD_ONCE, KEEP_HELD } held_state;
-} kbmap[nb_rows][nb_cols] = {
-	{ {"Esc",'E','E', 9,0,0}, {0,'=','+',21,0,0},{0,'\\','|',51,0,0}, {0,'`','~',23,0,0}, {0,'/','?',61,0,0}, {"Bak",'B','B',22,0,0} },
-	{ {"Tab",'T','T',23,0,0}, {0,'1','!',10,0,0}, {0,'2','@',11,0,0}, {0,'3','#',12,0,0}, {0,'4','$',13,0,0}, {0,'5','%',14,0,0} },
-	{ {0,'6','^',15,0,0}, {0,'7','&',16,0,0}, {0,'8','*',17,0,0}, {0,'9','(',18,0,0}, {0,'0',')',19,0,0}, {0,'-','_',20,0,0} },
-	{ {0,'q','Q',24,0,0}, {0,'w','W',25,0,0}, {0,'e','E',26,0,0}, {0,'r','R',27,0,0}, {0,'t','T',28,0,0}, {0,'y','Y',29,0,0} },
-	{ {0,'a','A',38,0,0}, {0,'s','S',39,0,0}, {0,'d','D',40,0,0}, {0,'f','F',41,0,0}, {0,'g','G',42,0,0}, {0,'h','H',43,0,0} },
-	{ {0,'z','Z',52,0,0}, {0,'x','X',53,0,0}, {0,'c','C',54,0,0}, {0,'v','V',55,0,0}, {0,'b','B',56,0,0}, {0,'n','N',57,0,0} },
-	{ {0,'u','U',30,0,0}, {0,'i','I',31,0,0}, {0,'o','O',32,0,0}, {0,'p','P',33,0,0}, {0,'[','{',34,0,0}, {0,']','}',35,0,0} },
-	{ {0,'j','J',44,0,0}, {0,'k','K',45,0,0}, {0,'l','L',46,0,0}, {0,';',':',47,0,0},{0,'\'','"',48,0,0}, {"Ctl",'C','C',37,1,0} },
-	{ {0,'m','M',58,0,0}, {0,',','<',59,0,0}, {0,'.','>',60,0,0}, {0,' ',' ',65,0,0}, {"Shf",'S','S',62,1,0}, {"Ret",'R','R',36,0,0} },
+} top_kbmap[2][nb_top_rows][nb_cols] = {
+	{
+		{KS("q","Q",24),KS("w","W",25),KS("e","E",26),KS("r","R",27),KS("t","T",28),KS("y","Y",29)},
+		{KS("u","U",30),KS("i","I",31),KS("o","O",32),KS("p","P",33),KS("[","{",34),KS("]","}",35)},
+		{KS("a","A",38),KS("s","S",39),KS("d","D",40),KS("f","F",41),KS("g","G",42),KS("h","H",43)},
+		{KS("j","J",44),KS("k","K",45),KS("l","L",46),KS("m","M",58),KS(";",":",47),KS("'","\"",48)},
+		{KS("z","Z",52),KS("x","X",53),KS("c","C",54),KS("v","V",55),KS("b","B",56),KS("n","N",57)},
+		{KS(",","<",59),KS(".",">",60),KS("=","+",21),KS("\\","|",51),KS("`","~",23),KS("/","?",61)}
+	}, {
+		{KN("F1",67),KN("F2",68),KN("F3",69),KN("F4",70),KN("F5",71),KN("F6",72)},
+		{KN("F7",73),KN("F8",74),KN("F9",75),KN("F10",76),KN("F11",95),KN("F12",96)},
+		{KN("Tab",23),KS("=","+",21),KS("\\","|",51),KS("`","~",23),KS("/","?",61),KN("Esc",9)},
+		{KS("1","!",10),KS("2","@",11),KS("3","#",12),KS("4","$",13),KS("5","%",14),KS("6","^",15)},
+		{KS("7","&",16),KS("8","*",17),KS("9","(",18),KS("0",")",19),KN("Up",98),KS("-","_",20)},
+		{KN("Sys",111),KN("PUp",99),KN("PDo",105),KN("Lft",100),KN("Dwn",104),KN("Rgt",102)}
+	}
+}, bot_kbmap[nb_bot_rows][nb_cols] = {
+	{KH("Shf",62),KN("",65),KN("",65),KN("Ins",106),KN("Del",107),KN("Bak",22)},
+	{KF("Col",0),KF("Tgl",1),KH("Alt",64),KH("AlG",113),KH("Ctl",37),KN("Ret",36)}
 };
 
 static struct key *key_at(unsigned col, unsigned row)
 {
-	return &kbmap[row][col];
+	assert(col < nb_cols && row < nb_rows);
+	if (row < nb_top_rows) {
+		return &top_kbmap[map][row][col];
+	}
+	return &bot_kbmap[row-nb_top_rows][col];
 }
 
 static char const *get_config_str(char const *varname, char const *defaultval)
@@ -102,19 +123,16 @@ static void show_mask(void)
 					XDrawRectangle(dis, mask, mask_gc, x_col+1, y_row+1, col_width-2, row_height-2);
 					break;
 			}
-			if (key->name) {
-				// FIXME: compute the actual width of the string
-				XDrawString(dis, mask, mask_gc, x-font_width, y, key->name, 3);
-			} else {
-				XDrawString(dis, mask, mask_gc, x, y, shifted ? &key->shifted : &key->unshifted, 1);
-			}
+			// FIXME: compute the actual width of the string
+			int const len = strlen(key->name[shifted]);
+			XDrawString(dis, mask, mask_gc, x-(font_width*len)/2, y, key->name[shifted], len);
 		}
 	}
 	
 	XShapeCombineMask(dis, win, ShapeBounding, 0, 0, mask, ShapeSet);
 
 	// Update window
-	XSetForeground(dis, gc, kb_color);
+	XSetForeground(dis, gc, kb_color[color]);
 	XFillRectangle(dis, win, gc, 0, 0, osd_width, osd_height);
 
 	visible = true;
@@ -233,9 +251,23 @@ static void hit(int x, int y, int press)
 	if (! visible) {
 		need_show = true;
 	} else if (press) {
-		XTestFakeKeyEvent(dis, key->code, True, CurrentTime);
-		if (key->code == SHIFT_KEYCODE) shifted = true;
+		if (key->code == 0) {
+			// Change color
+			color ^= 1;
+			need_show = true;
+		} else if (key->code == 1) {
+			// Togle map
+			map ^= 1;
+			need_show = true;
+		} else {
+			XTestFakeKeyEvent(dis, key->code, True, CurrentTime);
+			if (key->code == SHIFT_KEYCODE) {
+				shifted = true;
+				need_show = true;
+			}
+		}
 	} else {	// release
+		if (key->code <= 1) return;
 		if (key->hold) {	// Must not release at once
 			switch (key->held_state) {
 				case NOT_HELD:
@@ -297,7 +329,8 @@ int main(void)
 	border_right  = get_config_int("KBOSD_BORDER_RIGHT", 0);
 	border_top    = get_config_int("KBOSD_BORDER_TOP", 20);
 	border_bottom = get_config_int("KBOSD_BORDER_BOTTOM", 0);
-	kb_color      = get_config_int("KBOSD_COLOR", 0xFFFFFF);
+	kb_color[0]   = get_config_int("KBOSD_COLOR", 0xFFFFFF);
+	kb_color[1]   = get_config_int("KBOSD_COLOR_ALT", 0xFFE0);
 	osd_width     = win_width - (border_left+border_right);
 	osd_height    = win_height - (border_top+border_bottom);
 
