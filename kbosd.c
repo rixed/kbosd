@@ -24,15 +24,16 @@ static int font_width, font_height, font_offset_x, font_offset_y;
 static unsigned long kb_color;
 static unsigned timeout;	// delay of inactivity before hiding the KB
 static time_t hide_time;	// after this timestamp, we will hide the KB
-static int visible;	// weither the KB is currently visible
+static bool visible;	// weither the KB is currently visible
+static bool shifted;
 
-#define SHIFT_COL 4
-#define SHIFT_ROW 8
 #define nb_cols 6
 #define nb_rows 9
 static int col_width, row_height;
 static int border_left, border_right, border_top, border_bottom;
 static unsigned osd_width, osd_height;
+
+#define SHIFT_KEYCODE 62
 
 static struct key {
 	char const *name;	// takes precedence over (un)shifter char
@@ -79,7 +80,6 @@ static unsigned long get_config_int(char const *varname, unsigned long defaultva
 
 static void show_mask(void)
 {
-	bool const shifted = key_at(SHIFT_COL, SHIFT_ROW)->held_state != NOT_HELD;
 	//printf("Show mask %s\n", shifted ? "Shifted":"Unshifted");
 
 	// Update mask
@@ -117,7 +117,7 @@ static void show_mask(void)
 	XSetForeground(dis, gc, kb_color);
 	XFillRectangle(dis, win, gc, 0, 0, osd_width, osd_height);
 
-	visible = 1;
+	visible = true;
 }
 
 static void hide_mask(void)
@@ -127,7 +127,7 @@ static void hide_mask(void)
 	XFillRectangle(dis, mask, mask_gc, 0, 0, osd_width, osd_height);
 	XShapeCombineMask(dis, win, ShapeBounding, 0, 0, mask, ShapeSet);
 	
-	visible = 0;
+	visible = false;
 }
 
 // Release all previously held keys, sending fake release event.
@@ -145,6 +145,7 @@ static bool release_all_held(bool just_once)
 			{
 				key->held_state = NOT_HELD;
 				XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
+				if (key->code == SHIFT_KEYCODE) shifted = false;
 				ret = true;
 			}
 		}
@@ -233,6 +234,7 @@ static void hit(int x, int y, int press)
 		need_show = true;
 	} else if (press) {
 		XTestFakeKeyEvent(dis, key->code, True, CurrentTime);
+		if (key->code == SHIFT_KEYCODE) shifted = true;
 	} else {	// release
 		if (key->hold) {	// Must not release at once
 			switch (key->held_state) {
@@ -245,6 +247,7 @@ static void hit(int x, int y, int press)
 				case KEEP_HELD:
 					key->held_state = NOT_HELD;
 					XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
+					if (key->code == SHIFT_KEYCODE) shifted = false;
 					break;
 			}
 			need_show = true;
@@ -306,7 +309,7 @@ int main(void)
 	 */
 	timeout   = get_config_int("KBOSD_TIMEOUT", 4);
 	hide_time = time(NULL) + timeout;
-	visible = 1;
+	visible = true;
 
 	open_X();
 	event_loop();
