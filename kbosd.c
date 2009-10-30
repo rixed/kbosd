@@ -39,7 +39,7 @@ static struct key {
 	char unshifted, shifted;
 	unsigned code;	// use xev to find keycodes !
 	int hold:1;	// must keep pressed nutil next key that's not hold
-	int held:1;	// currently held down
+	enum held_state { NOT_HELD, HELD_ONCE, KEEP_HELD } held_state;
 } kbmap[nb_rows][nb_cols] = {
 	{ {"Esc",'E','E', 9,0,0}, {0,'=','+',21,0,0},{0,'\\','|',51,0,0}, {0,'`','~',23,0,0}, {0,'/','?',61,0,0}, {"Bak",'B','B',22,0,0} },
 	{ {"Tab",'T','T',23,0,0}, {0,'1','!',10,0,0}, {0,'2','@',11,0,0}, {0,'3','#',12,0,0}, {0,'4','$',13,0,0}, {0,'5','%',14,0,0} },
@@ -79,7 +79,7 @@ static unsigned long get_config_int(char const *varname, unsigned long defaultva
 
 static void show_mask(void)
 {
-	bool const shifted = key_at(SHIFT_COL, SHIFT_ROW)->held;
+	bool const shifted = key_at(SHIFT_COL, SHIFT_ROW)->held_state != NOT_HELD;
 	//printf("Show mask %s\n", shifted ? "Shifted":"Unshifted");
 
 	// Update mask
@@ -93,8 +93,14 @@ static void show_mask(void)
 			int const y_row = row * row_height;
 			int const y = y_row + (row_height - font_height)/2 - font_offset_y;
 			struct key const *key = key_at(col, row);
-			if (key->held) {
-				XDrawRectangle(dis, mask, mask_gc, x_col+1, y_row+1, col_width-2, row_height-2);
+			switch (key->held_state) {
+				case NOT_HELD: break;
+				case KEEP_HELD:
+					XDrawRectangle(dis, mask, mask_gc, x_col+4, y_row+4, col_width-8, row_height-8);
+					// pass
+				case HELD_ONCE:
+					XDrawRectangle(dis, mask, mask_gc, x_col+1, y_row+1, col_width-2, row_height-2);
+					break;
 			}
 			if (key->name) {
 				// FIXME: compute the actual width of the string
@@ -126,15 +132,18 @@ static void hide_mask(void)
 
 // Release all previously held keys, sending fake release event.
 // Return true if some keys were actually held.
-static bool release_all_held(void)
+static bool release_all_held(bool just_once)
 {
 	bool ret = false;
 
 	for (unsigned col = 0; col < nb_cols; col++) {
 		for (unsigned row = 0; row < nb_rows; row++) {
 			struct key *key = key_at(col, row);
-			if (key->held) {
-				key->held = 0;
+			if (
+				(just_once && key->held_state == HELD_ONCE) ||
+				(!just_once && key->held_state != NOT_HELD))
+			{
+				key->held_state = NOT_HELD;
 				XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
 				ret = true;
 			}
@@ -153,7 +162,7 @@ static void redraw(void)
 			fprintf(stderr, "Cannot grab pointer !\n");
 		}
 		// Just in case the previous invocation quit with some left pending Press events.
-		(void)release_all_held();
+		(void)release_all_held(false);
 		show_mask();
 	}
 }
@@ -200,7 +209,7 @@ static void open_X(void)
 
 static void close_X(void)
 {
-	(void)release_all_held();
+	(void)release_all_held(false);
 	if (font) XFreeFont(dis, font);
 	XUngrabPointer(dis, CurrentTime);
 	XFreeGC(dis, gc);
@@ -226,17 +235,23 @@ static void hit(int x, int y, int press)
 		XTestFakeKeyEvent(dis, key->code, True, CurrentTime);
 	} else {	// release
 		if (key->hold) {	// Must not release at once
-			if (! key->held) {
-				key->held = 1;
-			} else {	// The key was already hold : release it
-				key->held = 0;
-				XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
+			switch (key->held_state) {
+				case NOT_HELD:
+					key->held_state = HELD_ONCE;
+					break;
+				case HELD_ONCE:
+					key->held_state = KEEP_HELD;
+					break;
+				case KEEP_HELD:
+					key->held_state = NOT_HELD;
+					XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
+					break;
 			}
 			need_show = true;
 		} else {	// normal key
 			XTestFakeKeyEvent(dis, key->code, False, CurrentTime);
-			// Release all previously hold keys
-			need_show = release_all_held();
+			// Release all previously hold keys (but the onces that are "locked")
+			need_show = release_all_held(true);
 		}
 	}
 
