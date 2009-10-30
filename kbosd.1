@@ -16,19 +16,35 @@ OK for Hackable:1 Freerunner distribution.
 Left margin, in pixels, before the OSD window begins (default: 0).
 .IP \fBKBOSD_BORDER_RIGHT\fP 2
 Right margin, in pixels, after the OSD window (default: 0).
-.IP KBOSD_BORDER_TOP 2
+.IP \fBKBOSD_BORDER_TOP\fP 2
 Top margin, in pixels, on top of the OSD window (default: 20).
-.IP KBOSD_BORDER_BOTTOM 2
+.IP \fBKBOSD_BORDER_BOTTOM\fP 2
 Bottom margin, etc (default: 0).
 .PP
 You can also control the appearance (and disappearance) of the OSD :
-.IP KBOSD_COLOR 2
+.IP \fBKBOSD_COLOR\fP 2
 Color as an unsigned integer (for instance, 0xFF0000 on a 32 bits display
-would probably be red)
-.IP KBOSD_TIMEOUT 2
+would probably be red).
+.IP \fBKBOSD_COLOR_ALT\fP 2
+Alternate color to use when the special key of scancode 0 is pressed.
+.IP \fBKBOSD_TIMEOUT\fP 2
 Number of seconds of inactivity before the OSD is hiden (default: 4).
-.IP KBOSD_FONT 2
+.IP \fBKBOSD_FONT\fP 2
 Font to use (default: "-sony-*-*-*-*-*-24-*-*-*-*-*-*-*" which is the
 biggest I've found available on H:1).
-.SH AUTHOR
-rixed@happyleptic.org
+.IP \fBKBOSD_VIBRATOR_STRENGTH\fP 2
+Value from 0 (no vibration) to 255 (max) that defines how much the FreeRunner
+will vibrate on each key press. Default is 100.
+.IP \fBKBOSD_VIBRATOR_TIME\fP 2
+Length in microseconds of the vibration. Default is 50000 (0.05s).
+.IP \fBKBOSD_VIBRATOR_FILE\fP 2
+Location of the device file kbosd must write to to control the vibrator.
+Default to
+.B /sys/class/leds/neo1973:vibrator/brightness.
+.IP \fBKBOSD_LAYOUT\fP 2
+File that describe an alternative layout to use instead of the default one.
+See some sample layout in
+.BR /prefix/share/kbosd/ .
+.SH AUTHORS
+rixed@happyleptic.org,
+raron@vipmail.hu
