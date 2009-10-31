@@ -385,6 +385,7 @@ int main(void)
 	with_vibrator     = vibrator_strength && vibrator_time && vibrator_file;
 	if (with_vibrator && !(vib_fd = fopen(vibrator_file, "w"))) {
 		perror(vibrator_file);
+		with_vibrator = false;
 	}
 
 	char const *layout_path = get_config_str("KBOSD_LAYOUT", NULL);
