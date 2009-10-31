@@ -379,7 +379,7 @@ int main(void)
 	row_height    = osd_height / nb_rows;
 
 	char const *vibrator_file;
-	vibrator_strength = get_config_int("KBOSD_VIBRATOR_STRENGTH", 100); // 0 - 255
+	vibrator_strength = get_config_int("KBOSD_VIBRATOR_STRENGTH", 150); // 0 - 255
 	vibrator_time     = get_config_int("KBOSD_VIBRATOR_TIME", 50000);     // in micro-seconds
 	vibrator_file     = get_config_str("KBOSD_VIBRATOR_FILE", "/sys/class/leds/neo1973:vibrator/brightness");  // on openmoko
 	with_vibrator     = vibrator_strength && vibrator_time && vibrator_file;

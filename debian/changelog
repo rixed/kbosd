@@ -1,3 +1,9 @@
+kbosd (20091031) unstable; urgency=low
+
+  * Gives feedback to the user with the vibrator.
+
+ -- Radics Áron <raron@vipmail.hu>  Sat, 31 Oct 2009 12:29:37 +0100
+
 kbosd (20091030) unstable; urgency=low
 
   * Improved keyboard layout
