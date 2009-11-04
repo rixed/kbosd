@@ -7,8 +7,8 @@ Standards-Version: 3.7.3
 
 Package: kbosd
 Architecture: any
-Depends: libh1settings0, ${shlibs:Depends}, ${misc:Depends}
-Recommends: tv-fonts
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: tv-fonts | xfonts-100dpi | xfonts-100dpi-transcoded
 Description: A virtual keyboard as OSD
  This is a small and simple virtual keyboard for OpenMoko FreeRunner, inspired from fatfingershell.
  The idea was to use XShape extention to display the virtual keyboard above the terminal.
