@@ -1,6 +1,6 @@
 /* KbOSD - Keyboard on OSD - GPLv3.
  * Home: http://gitorious.org/kbosd
- * (c)2009 Cedric Cellier, Radics Áron
+ * (c)2009 Cedric Cellier, Áron Radics
  */
 #include <stdlib.h>
 #include <stdio.h>
