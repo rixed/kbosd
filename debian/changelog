@@ -1,3 +1,10 @@
+kbosd (20091104) unstable; urgency=low
+
+  * Fix typos and add README.
+  * Remove spurious dependency on h1settings.
+
+ -- Cedric Cellier <rixed@happyleptic.org>  Wed, 04 Nov 2009 08:44:46 +0100
+
 kbosd (20091031) unstable; urgency=low
 
   * Gives feedback to the user with the vibrator.
