@@ -1,0 +1,50 @@
+This keyboard is intended to be used in an OpenMoko FreeRunner, but could be 
+useful on other gadgets as well. The idea is to overlay the keyboard to the 
+main display and grab the mouse events, in a way that works with any 
+applications (thats does not require the mouse events).
+
+It is largely inspired by the fatfingershell.
+
+You can configure many things using environment variables, including font, 
+color and keys layout.
+
+Font
+----
+
+By default, kbosd may use a font too small to be comfortably read. I suggest 
+you install one of these X11 font packages :
+
+- xfonts-100dpi, and export KBOSD_FONT="-etl-*-*-*-*-*-40-*-*-*-*-*-*-*"
+- tv-fonts, and export KBOSD_FONT="-xxl-*-*-*-*-*-39-*-*-*-*-*-*-*"
+
+These are the one I like best, but I haven't tried many.
+Use xfontsel utility to choose your own !
+
+Layout
+------
+
+You may not like the default layout which mimics a standard qwerty keyboard. 
+For instance, you may prefer a localized layout, or to have the keys 
+alphabetically ordered. Hopefully you can define your own layout in a file,
+and tell kbosd about it using the environment variable KBOSD_LAYOUT.
+
+The layout file consist of a sequence of "Name1 Name2 keycode boolean".  
+Everything is delimiter by blank space (space, tab, new line, whatever).  
+Name1 must be at most 3 chars and is the name of the key when shift is off, 
+while name2 is the name of the key when shift is on (most of special keys have 
+the same name with or without shift). Then keycode is the keycode of the key 
+(you can find it with the tool xev for instance). The boolean (0 or 1) tells 
+whether this key can be held pressed or not (useful for shift, control and 
+alt).
+
+Also, as a special exception, when name is "___" it is replaced by spaces (as 
+spaces are otherwise parsed as delimiters). And there are two special keycodes 
+: 0, which is for the "change color" key, and 1 which is for the "toggle keys" 
+key.
+
+So, every keys are read from this file one by one, starting at the topleft key 
+of the first key maps (36 keys), then the second key maps (again 36 keys), 
+then the 2 bottom lines (12 keys).
+
+You can use the provided default.layout as a template for your 
+experimentations.
